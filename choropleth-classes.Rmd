@@ -6,9 +6,9 @@ date: "9 January 2017"
 output: html_document
 ---
 
-What's the right way to define class boundaries in a classed choropleth? One part of this is macro-level: how should you determine the classes (equal-interval, quantile, Jenks, etc)? This is an interesting question, but its extensively answered elsewhere.
+What's the right way to define class boundaries in a classed choropleth? One part of this is macro-level: how should you determine the classes (equal-interval, quantile, Jenks, etc)? This is an interesting question, but its extensively answered [elsewhere](http://axismaps.github.io/thematic-cartography/articles/choropleth.html).
 
-The question I'm interested in is - having decided on your approximated classes - exactly where do you draw the boundaries?
+The question I'm interested in is - having decided on your general classes - exactly where do you draw the boundaries?
 
 An example: you have count (ie discrete) data for population of US counties.
 
@@ -90,7 +90,7 @@ plot_counties(pop, "density_interval", "[B] Continuous - interval\nPopulation de
 
 Unfortunately this compact notation has never entered mainstream non-technical use, so for a general audience we're limited to the English word 'to' or it's symbolic equivalent, the hyphen/n-dash/choose-your-favourite-horizontal-stroke: '-'. Of course we could simply declare that '-' means 'up to but not including', and some people do, but that's far short of a standard convention.
 
-So bothered are some cartographers by the seemingly overlapping categories of the naive solution, they prefer to round the variable, then treat it as discrete.
+So bothered are some cartographers by the seemingly overlapping categories of the naive solution, they prefer to round the variable, then treat it as discrete (this is how choropleths appear in my *Times Atlas*, for example).
 
 ```{r}
 # Rounded classes
