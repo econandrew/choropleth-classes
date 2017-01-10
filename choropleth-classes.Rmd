@@ -1,0 +1,149 @@
+---
+title: "Choropleth Class Boundaries"
+subtitle: Or how I learned to stop worrying and love overlapping boundaries
+author: "Andrew Whitby"
+date: "9 January 2017"
+output: html_document
+---
+
+What's the right way to define class boundaries in a classed choropleth? One part of this is macro-level: how should you determine the classes (equal-interval, quantile, Jenks, etc)? This is an interesting question, but its extensively answered elsewhere.
+
+The question I'm interested in is - having decided on your approximated classes - exactly where do you draw the boundaries?
+
+An example: you have count (ie discrete) data for population of US counties.
+
+```{r, echo=FALSE}
+# Based loosely on https://www.r-bloggers.com/using-blscraper-to-map-county-unemployment-data/
+library(blscrapeR)
+library(ggplot2)
+library(ggthemes)
+library(stringr)
+```
+```{r}
+# Get data
+pop <- read.csv("population.csv",skip=1)
+```
+```{r, echo=FALSE}
+pop <- pop[pop$Target.Geo.Id2 >= 1000,]
+pop$fips <- str_pad(pop$Target.Geo.Id2, 5, pad = "0")
+
+# Simple plot function
+plot_counties <- function(df, value_column, title=value_column, palette="YlOrBr") {
+  ggplot(data=df, aes(map_id=fips)) +
+    geom_map(map=county_map_data, aes_string(fill=value_column), color="white", size=0.1) +
+    scale_fill_brewer(palette = palette, na.value="grey80", guide = guide_legend(title = title)) +
+    coord_equal() +
+    expand_limits(x = county_map_data$long, y = county_map_data$lat) +
+    theme_map(base_size = 12) + 
+    theme(legend.position="right", legend.justification=c(1,1))
+}
+
+knitr::opts_chunk$set(fig.width=8, fig.height=4)
+```
+
+Suppose you decide on five log intervals. Then I think there is one unambiguously best solution, which clearly reflects the discrete-ness of the population variable.
+
+```{r}
+# Discrete data
+pop$pop_count <- cut(
+  pop$Population,
+  include.lowest = T,
+  breaks = c(1e2, 1e3, 1e4, 1e5, 1e6, 1e7),
+  labels = c("100 to 999", "1000 to 9999", "10,000 to 99,000", "100,000 to 999,999", "1,000,000 to 9,999,999"))
+plot_counties(pop, "pop_count", "Discrete Variable\nPopulation by county",  "Blues")
+```
+
+But suppose you remember that choropleths should mainly be used for normalized data, so you decide to plot population density instead (grudgingly using persons per square mile)?
+
+```{r}
+# Calculate rate
+pop$pop_density_mi2 <- pop$Population / pop$Area.in.square.miles...Total.area
+```
+
+Now this new variable is not discrete. How best to define the classes of this new variable?
+
+The naive solution results in 'overlapping' class boundaries. (Note that the breaks I've used are not equal interval, or quantiles, or Jenks - but they're human-sensible. This is my preferred way to decide classes for general purpose presentation.)
+
+```{r}
+# "Overlapping" classes
+pop$density_overlapping <- cut(
+  pop$pop_density_mi2,
+  include.lowest = T,
+  breaks = c(0,2,6,18,45,90,Inf),
+  labels = c('0–2', '2–6', '6–18', '18–45', '45–90', '90 and over'))
+plot_counties(pop, "density_overlapping", "[A] Continuous - 'overlapping'\nPopulation density (per sq km)\n")
+```
+
+But it seems many traditional cartographers take issue with this, because the boundary values (2,6,18,45,90) appear to be in both lower and upper intervals. "In which class," they ask "would 18 fall?"
+
+Mathematicians, who can't afford ambiguity, have devised a simple solution to this, in the form of open and closed [interval notation](https://en.wikipedia.org/wiki/Interval_(mathematics)#Notations_for_intervals):
+
+```{r}
+# Mathematical interval classes
+pop$density_interval <- cut(
+  pop$pop_density_mi2,
+  include.lowest = T,
+  breaks = c(0,2,6,18,45,90,Inf),
+  labels = c('[0, 2)', '[2, 6)', '[6, 18)', '[18, 45)', '[45, 90)', '[90, ∞)'))
+plot_counties(pop, "density_interval", "[B] Continuous - interval\nPopulation density (per sq km)")
+```
+
+Unfortunately this compact notation has never entered mainstream non-technical use, so for a general audience we're limited to the English word 'to' or it's symbolic equivalent, the hyphen/n-dash/choose-your-favourite-horizontal-stroke: '-'. Of course we could simply declare that '-' means 'up to but not including', and some people do, but that's far short of a standard convention.
+
+So bothered are some cartographers by the seemingly overlapping categories of the naive solution, they prefer to round the variable, then treat it as discrete.
+
+```{r}
+# Rounded classes
+pop$density_rounded <- cut(
+  round(pop$pop_density_mi2, 1),
+  include.lowest = T,
+  breaks = c(0,2,6,18,45,90,Inf),
+  labels = c('0.0–1.9', '2.0–5.9', '6.0–17.9', '18.0–44.9', '45.0–89.9', '90.0 and over'))
+plot_counties(pop, "density_rounded", "[C] Continuous - rounded\nPopulation density (per sq km)")
+```
+
+Apparently these same cartographers are not bothered at all by the mysterious gaps implied between, say, 17.9 and 18.0. Sometimes you even see the following particularly ugly choice, where the cartographer is standing on the very edge of the overlapping-boundaries abyss, but is not quite willing to jump: 
+
+```{r}
+# Pseudo-rounded classes
+pop$density_pseudorounded <- cut(
+  round(pop$pop_density_mi2, 5),
+  include.lowest = T,
+  breaks = c(0,2,6,18,45,90,Inf),
+  labels = c('0–1.99999', '2–5.99999', '6–17.99999', '18–44.99999', '45–89.99999', '90 and over'))
+plot_counties(pop, "density_pseudorounded", "[D] Continuous - pseudo-rounded\nPopulation density (per sq km)")
+```
+
+I want to give such cartographers the extra push they need. The naive, 'overlapping' solution is correct, and the rounded solution is worse and unnecessary. At best, it's a relic of pre-computer days, and deserves to die the same death as the two-spaces-after-a-period typing convention.
+
+### Why the naive solution is the right one
+
+1. *The overlapping boundaries problem is a non problem.* It misunderstands how people use choropleth maps. There are really two ways people might use the legend of a choropleth, and neither of them asks "In which class would 18 fall?"
+ - One is to look first at the legend, choose a range (e.g. 0-2), then try to recognise regions on the map that match that range (e.g. some of the inland western US, none or almost none in the east). Nobody cares whether exactly-2 is or is not included in that exercise. If a value has particular significance (e.g. 0) then it should be classed separately as a discrete 'atom'.
+ - The other is to look first at the map, identify a region and color shade, and look up the corresponding range in the legend. Take for example Hawaii's Big Island, which falls in the fourth class. All we can say is that it falls somewhere in the range 18-45. Whether that range includes or excludes its boundaries does virtually nothing to alter this range of uncertainty. If you need precision, you're using the wrong kind of visualization.
+ 
+ 2. *The cartographic (rounded) solution has the same problem - and it's worse.* Rounding the variable doesn't actually make the boundaries go away. It just moves them slightly, then hides them by wrapping them up in a better-known convention ("5 rounds up" - and even that is [far from universal](https://en.wikipedia.org/wiki/Rounding#Tie-breaking)). To see this, reconstruct the rounded classes as mathematical intervals. What you see is that the class boundaries are still there, but they're offset from whole numbers by the rounding. If your intention was to choose human-sensible class boundaries, rounding has ruined that.
+
+```{r}
+# Rounded as interval classes
+pop$density_rounded <- cut(
+  round(pop$pop_density_mi2, 1),
+  include.lowest = T,
+  breaks = c(0,2,6,18,45,90,Inf),
+  labels = c('[0, 1.95)', '[1.95, 5.95)', '[5.95, 17.95)', '[17.95, 44.95)', '[44.95, 89.95)', '[89.95, ∞)'))
+plot_counties(pop, "density_rounded", "[E] Continuous - rounded interval\nPopulation density (per sq km)")
+```
+
+3. *There is inevitable uncertainty about values near the class boundaries.* For a value near enough to the class boundary - say 1.98, we always run the risk of mis-classing the region, however we set the class boundaries (unless the data naturally separate into K classes, but that's not common). If we've formally modelled the measurement error, then perhaps 1.97 is actually 1.97±0.04, and whichever method we choose, it could still be mis-classed. Unclassed choropleths are one solution, but they suffer their own perception problems.
+
+4. *It is better to use a style that reflects a fundamental discreteness or continuousness of the data.* Some variables are inherently discrete - number of persons, number of votes, number of cities - while others are inherently continuous - population density, unemployment rate, acres of forest. Some can be either depending on context - e.g. age in whole years (typically rounded down) vs exact age. Choosing a discrete legend for a discrete variable, and an overlapping one for a continuous variable, is good communication. Of course some variables are continuous in nature, but in practice are published rounded (e.g. unemployment, often to 1 decimal). Then the choice is harder, but I would still err on the side of simplicity (ie. the overlapping solution).
+
+5. *The rounded solution results from a bad analogy from point representations in tables.* Imagine you're laying out a table for printing. Now, for presentation purposes, you have to adopt a rounding standard. Before computers, even to pass data around people would usually standardise on some fixed-point representation (e.g. 3 digits after the decimal point). You could simply truncate all the figures (round them down), but this would bias all the numbers downwards. Instead, the rounding convention we know developed, to minimise systematic error due to truncation. But on choropleth map, we're not trying to represent numbers as points, we're trying to represent them as ranges. Classing ranges, not rounding, is the method you've chosen to discretize the data for presentation, so the same considerations don't apply.
+
+6. *The naive ('overlapping') solution is more concise.* If the other reasons leave you ambivalent, fall back on this: the less text on your visualisation, the more quickly it can be taken in.
+
+It turns out that many, many choropleth maps are published today that ignore the 'overlapping' boundaries issue, from such esteemed outlets as the [New York Times](https://static01.nyt.com/newsgraphics/2016/11/01/election-map-forms/738e8fe0f4e6d89ec6cb63555d3deb92e772f916/top.png), the [Financial Times](https://www.ft.com/content/70adb9ca-0103-3ea9-887f-1cdf4b08bc80), the [Washington Post](https://www.washingtonpost.com/news/wonk/wp/2016/12/24/where-the-heaviest-drinking-americans-live/), the [Economist](http://www.economist.com/sites/default/files/201030ASM923.gif), [FiveThirtyEight](https://fivethirtyeight.com/features/how-americans-die-may-depend-on-where-they-live/), [CIESIN/NASA](http://sedac.ciesin.columbia.edu/downloads/maps/gpw-v4/gpw-v4-population-density-adjusted-to-2015-unwpp-country-totals/gpw-v4-un-adjusted-population-density-global-2015.png). As far as I'm aware, people are not writing into complain about the confusion.
+
+And in case you wish to argue for tradition, I'll give the final word to this map of population density from one of my favourite dataviz books, the [1890 Statistical Atlas of the United States](https://www.loc.gov/resource/g3701gm.gct00010/?sp=18) (edited to enlarge the legend).
+
+![Population Density of US, 1890](ca000018.jpg)
