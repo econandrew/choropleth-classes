@@ -38,7 +38,7 @@ plot_counties <- function(df, value_column, title=value_column, palette="YlOrBr"
     theme(legend.position="right", legend.justification=c(1,1))
 }
 
-knitr::opts_chunk$set(fig.width=8, fig.height=4)
+knitr::opts_chunk$set(fig.width=8, fig.height=4, dev='png', dpi=96)
 ```
 
 Suppose you decide on five log intervals. Then I think there is one unambiguously best solution, which clearly reflects the discrete-ness of the population variable.
